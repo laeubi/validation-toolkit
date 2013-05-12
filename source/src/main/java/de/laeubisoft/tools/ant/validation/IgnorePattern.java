@@ -22,6 +22,8 @@ package de.laeubisoft.tools.ant.validation;
 import java.util.regex.Pattern;
 
 /**
+ * Just a Helper class for Ant to hand pattern over to us...
+ * 
  * @author Christoph Läubrich
  */
 public class IgnorePattern {

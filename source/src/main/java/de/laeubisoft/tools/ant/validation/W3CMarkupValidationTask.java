@@ -23,9 +23,7 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
-import java.net.ProtocolException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.util.ArrayList;
@@ -59,7 +57,6 @@ import org.ccil.cowan.tagsoup.Parser;
 import org.w3.markup.validator.Culprit;
 import org.w3.markup.validator.Debug;
 import org.w3.markup.validator.Envelope;
-import org.w3.markup.validator.Error;
 import org.w3.markup.validator.MarkupValidationResponse;
 import org.w3.markup.validator.ObjectFactory;
 import org.w3.markup.validator.ValidationErrors;
@@ -79,7 +76,7 @@ import org.xml.sax.helpers.DefaultHandler;
 public class W3CMarkupValidationTask extends Task {
 
     /**
-     * 
+     * The URL of the public online validator
      */
     private static final String W3_ORG_VALIDATOR        = "http://validator.w3.org/check";
 
@@ -104,6 +101,9 @@ public class W3CMarkupValidationTask extends Task {
      */
     private String              fragment;
 
+    /**
+     * URL of the validator server to use
+     */
     private String              validator               = W3_ORG_VALIDATOR;
 
     /**
@@ -147,12 +147,30 @@ public class W3CMarkupValidationTask extends Task {
      */
     private String              errorPattern            = "[ERROR] [%7$s] Line %1$s, Column %2$s: %3$s (ID %4$s) source = '%5$s', %6$s";
 
+    /**
+     * The Pattern used to format warning response, see
+     * http://docs.oracle.com/javase/6/docs/api/java/util/Formatter.html#syntax
+     * for syntax
+     */
     private String              warningPattern          = "[WARNING] [%7$s] Line %1$s, Column %2$s: %3$s (ID %4$s) source = '%5$s', %6$s";
 
+    /**
+     * The Pattern used to format debug response, see
+     * http://docs.oracle.com/javase/6/docs/api/java/util/Formatter.html#syntax
+     * for syntax
+     */
     private String              debugPattern            = "[DEBUG] [%1$s] %2$s: %3$s";
 
+    /**
+     * The List of pattern to ignore
+     */
     private final List<Pattern> ignorePatternList       = new ArrayList<Pattern>();
 
+    /**
+     * Add a (configured) pattern to the ignore list
+     * 
+     * @param ignorePattern
+     */
     public void addConfiguredIgnore(IgnorePattern ignorePattern) {
         ignorePatternList.add(ignorePattern.toPattern());
     }
@@ -198,6 +216,9 @@ public class W3CMarkupValidationTask extends Task {
     }
 
     /**
+     * Set this to <code>true</code> if you want to fail the build on validation
+     * errors
+     * 
      * @param fail
      *            the new value for fail
      */
@@ -206,11 +227,11 @@ public class W3CMarkupValidationTask extends Task {
     }
 
     /**
-     * @param uploaded_file
-     *            the new value for uploaded_file
+     * @param file
+     *            the new value for file
      */
-    public void setFile(File uploaded_file) {
-        this.uploaded_file = uploaded_file;
+    public void setFile(File file) {
+        this.uploaded_file = file;
     }
 
     /**
@@ -255,22 +276,7 @@ public class W3CMarkupValidationTask extends Task {
 
     @Override
     public void execute() throws BuildException {
-        int notNullSource = 0;
-        if (uri != null) {
-            notNullSource++;
-        }
-        if (fragment != null) {
-            notNullSource++;
-        }
-        if (uploaded_file != null) {
-            notNullSource++;
-        }
-        if (notNullSource == 0) {
-            throw new BuildException("at least one of 'uri', 'fragment' or 'file' must be given!");
-        }
-        if (notNullSource > 1) {
-            throw new BuildException("Only one of 'uri', 'fragment' or 'file' can be given!");
-        }
+        validateParameter();
         List<URL> urlsToCheck = new ArrayList<URL>();
         urlsToCheck.add(uri);
         HashSet<String> checkedURIs = new HashSet<String>();
@@ -283,7 +289,9 @@ public class W3CMarkupValidationTask extends Task {
                 }
                 checkedURIs.add(uriString);
             }
+            //Check the URI (might be null if fragment or file was given...)
             if (checkURI(url)) {
+                //If we should recurse, parse the URL and determine all links
                 if (recurse) {
                     Set<URL> recurseInto = recurseInto(url);
                     for (URL newUrl : recurseInto) {
@@ -303,6 +311,45 @@ public class W3CMarkupValidationTask extends Task {
         }
     }
 
+    /**
+     * Validates the parameter and throws exception if something is invalid
+     * 
+     * @throws BuildException
+     */
+    private void validateParameter() throws BuildException {
+        int notNullSource = 0;
+        if (uri != null) {
+            notNullSource++;
+        }
+        if (fragment != null) {
+            notNullSource++;
+            if (recurse) {
+                throw new BuildException("the recurse option can only be used with uri attribute, but fragment was given");
+            }
+        }
+        if (uploaded_file != null) {
+            notNullSource++;
+            if (recurse) {
+                throw new BuildException("the recurse option can only be used with uri attribute, but file was given");
+            }
+        }
+        if (notNullSource == 0) {
+            throw new BuildException("at least one of 'uri', 'fragment' or 'file' must be given!");
+        }
+        if (notNullSource > 1) {
+            throw new BuildException("Only one of 'uri', 'fragment' or 'file' can be given!");
+        }
+    }
+
+    /**
+     * Send the given URL to the validator and check the result
+     * 
+     * @param uriToCheck
+     *            the {@link URL} to check
+     * @return <code>true</code> if URL was checked, <code>false</code> if this
+     *         URL can't be checked because it is of wrong type
+     * @throws BuildException
+     */
     protected boolean checkURI(final URL uriToCheck) throws BuildException {
         try {
             InputStream connection = buildConnection(uriToCheck);
@@ -310,6 +357,7 @@ public class W3CMarkupValidationTask extends Task {
             Object object = getObject(unmarshaller.unmarshal(connection));
             if (W3_ORG_VALIDATOR.equals(validator)) {
                 //The W3C recommends to at least wait one second between automatic requests to their public service...
+                //So we sleep here for one second to comply with this
                 try {
                     TimeUnit.SECONDS.sleep(1);
                 } catch (InterruptedException e) {
@@ -342,8 +390,19 @@ public class W3CMarkupValidationTask extends Task {
         }
     }
 
-    protected InputStream buildConnection(final URL uriToCheck) throws MalformedURLException, IOException, ProtocolException, UnsupportedEncodingException,
-            BuildException {
+    /**
+     * Creates the actual request to the validation server for a given
+     * {@link URL} and returns an inputstream the result can be read from
+     * 
+     * @param uriToCheck
+     *            the URL to check
+     * @return the stream to read the response from
+     * @throws IOException
+     *             if unrecoverable communication error occurs
+     * @throws BuildException
+     *             if server returned unexspected results
+     */
+    private InputStream buildConnection(final URL uriToCheck) throws IOException, BuildException {
         List<NameValuePair> params = new ArrayList<NameValuePair>();
         params.add(new NameValuePair("output", VALIDATOR_FORMAT_OUTPUT));
         if (uriToCheck != null) {
@@ -365,14 +424,17 @@ public class W3CMarkupValidationTask extends Task {
         HttpClient httpClient = new HttpClient();
         HttpMethodBase method;
         if (uriToCheck != null) {
+            //URIs must be checked wia traditonal GET...
             GetMethod getMethod = new GetMethod(validator);
             getMethod.setQueryString(params.toArray(new NameValuePair[0]));
             method = getMethod;
         } else {
             PostMethod postMethod = new PostMethod(validator);
             if (fragment != null) {
+                //Fragment request can be checked via FORM Submission
                 postMethod.addParameters(params.toArray(new NameValuePair[0]));
             } else {
+                //Finally files must be checked with multipart-forms....
                 postMethod.setRequestEntity(createFileUpload(params, postMethod.getParams()));
             }
             method = postMethod;
@@ -387,11 +449,21 @@ public class W3CMarkupValidationTask extends Task {
     }
 
     /**
+     * Creates a {@link RequestEntity} that can be used for submitting a file
+     * 
      * @param params
-     * @return
-     * @throws FileNotFoundException
+     *            the params to use
+     * @param methodParams
+     *            the {@link HttpMethodParams} of the requesting method
+     * @return {@link RequestEntity} that can be used for submitting the given
+     *         file via Multipart
+     * @throws IOException
+     *             if something is wrong with the file...
      */
-    private RequestEntity createFileUpload(List<NameValuePair> params, HttpMethodParams methodParams) throws FileNotFoundException {
+    private RequestEntity createFileUpload(List<NameValuePair> params, HttpMethodParams methodParams) throws IOException {
+        if (uploaded_file == null) {
+            throw new FileNotFoundException("file not present!");
+        }
         List<Part> parts = new ArrayList<Part>();
         for (NameValuePair nameValuePair : params) {
             parts.add(new StringPart(nameValuePair.getName(), nameValuePair.getValue()));
@@ -405,7 +477,13 @@ public class W3CMarkupValidationTask extends Task {
         return new MultipartRequestEntity(parts.toArray(new Part[0]), methodParams);
     }
 
-    protected Object getObject(Object object) {
+    /**
+     * Extract the "real" Object from JaxB
+     * 
+     * @param object
+     * @return
+     */
+    private static Object getObject(Object object) {
         if (object instanceof JAXBElement<?>) {
             object = ((JAXBElement<?>) object).getValue();
         }
@@ -413,8 +491,10 @@ public class W3CMarkupValidationTask extends Task {
     }
 
     /**
+     * Takes an {@link URL} and tries to find out all linked resources
+     * 
      * @param uriToRecurse
-     * @return
+     * @return a set of discovered urls
      */
     private Set<URL> recurseInto(final URL uriToRecurse) throws BuildException {
         final Set<URL> urlsFound = new HashSet<URL>();
@@ -427,7 +507,7 @@ public class W3CMarkupValidationTask extends Task {
                     if (value != null) {
                         try {
                             URL url = new URL(uriToRecurse, value);
-                            if (url.getHost().equalsIgnoreCase(uriToRecurse.getHost())) {
+                            if (url.getHost().equalsIgnoreCase(uriToRecurse.getHost()) && url.getPort() == uriToRecurse.getPort()) {
                                 urlsFound.add(url);
                             }
                         } catch (MalformedURLException e) {
@@ -449,6 +529,10 @@ public class W3CMarkupValidationTask extends Task {
     }
 
     /**
+     * Handle the response by printing out the relevant parts of the response to
+     * the appropiate levels, and fails if {@link #fail} is set and validation
+     * was not successfull
+     * 
      * @param markupvalidationresponse
      */
     private void handleResponse(MarkupValidationResponse response) {
@@ -462,7 +546,7 @@ public class W3CMarkupValidationTask extends Task {
         }
         ValidationErrors errors = response.getErrors();
         if (errors != null) {
-            for (Error error : errors.getErrorlist().getError()) {
+            for (org.w3.markup.validator.Error error : errors.getErrorlist().getError()) {
                 logMessage(errorPattern, response, error, Project.MSG_ERR);
             }
         }
