@@ -1,0 +1,9 @@
+<jxb:bindings xmlns:jxb="http://java.sun.com/xml/ns/jaxb"
+    version="2.0" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+    <jxb:globalBindings
+        fixedAttributeAsConstantProperty="true"
+        typesafeEnumBase="xsd:NCName xsd:string" choiceContentProperty="false"
+        typesafeEnumMemberName="generateName"
+        enableFailFastCheck="false" generateIsSetMethod="false"
+        underscoreBinding="asCharInWord" />
+</jxb:bindings>

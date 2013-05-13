@@ -11,15 +11,15 @@ features
 - [x] W3C MarkupValidator Task
 - [x] Hudson/Jenkins parser for generated Markup-Validator errors
 - [x] recursively check HTML document using public URLs
-- [ ] W3C CSS Validation Task
+- [x] W3C CSS Validation Task
 - [ ] Hudson/Jenkins parser for generated CSS-Validator errors
 - [ ] JS Linting/Checking task
 - [ ] Hudson/Jenkins parser for generated JS Linting/Checking errors
 - [ ] Full-(recursive)Page checker that validates/checks HTML, CSS and JS
 - [ ] ... ideas are welcome ...
 
-usage
------
+general setup
+-------------
 Fist download the latest build from the 'assembly' directory (or build your own version, see below).
 Extract all files and define a new task in your build.xml
 ```xml
@@ -28,9 +28,12 @@ Extract all files and define a new task in your build.xml
 		<include name="*.jar" />
 	</fileset>
 </path>
-<taskdef classname="de.laeubisoft.tools.ant.validation.W3CMarkupValidationTask" classpathref="classpath.markupvalidator" name="W3CMarkupValidation"></taskdef>
+<taskdef classname="de.laeubisoft.tools.ant.validation.W3CMarkupValidationTask" classpathref="classpath.markupvalidator" name="W3CMarkupValidation"></taskdef> 
+<taskdef classname="de.laeubisoft.tools.ant.validation.W3CCSSValidationTask" classpathref="classpath.markupvalidator" name="W3CCSSValidation"></taskdef>
 ```
-Now you can use the new task like this:
+Now you can use the new tasks like this:
+usage W3CMarkupValidationTask
+-----------------------------
 ```xml
 <W3CMarkupValidation uri="http://example.test" />
 ```
@@ -61,6 +64,30 @@ If you want to check all pages of a page (connected via links) you can specify t
 	<ignore>.*\.zip</ignore>
 </W3CMarkupValidation>
 ```
+usage W3CCSSValidationTask
+--------------------------
+```xml
+<W3CCSSValidation uri="http://example.test" />
+```
+This will check the page against the online version of the validator (http://jigsaw.w3.org/css-validator), alternatively you can validate a css text
+```xml
+<W3CCSSValidation cssText="${propertyHoldingCSSToValidate}" />
+```
+or even use file upload
+```xml
+<W3CCSSValidation file="/file/to/send.css" />
+```
+Like with W3CMarkupValidation it is recommend to install a private copy of the validator (see note below), you can specify an alternative URL (this of course also applies to fragments and file uploads) like this:
+```xml
+<W3CCSSValidation uri="http://example.test" validator="http://localhost/css-validator/validator" />
+```
+Optionally you can specify usermedium, profile, lang and warning level as attributes as described in the user-manual (http://jigsaw.w3.org/css-validator/manual.html#expert) if not given the validators defaults are used
+
+*One note about private install*: deviating from the manual under http://jigsaw.w3.org/css-validator/DOWNLOAD.html i recommend the following procedure (requires csv, ant and an applicationserver like Tomcat or Jetty):
+- checkout the source as described here: http://dev.w3.org/cvsweb/2002/css-validator/
+- build the validator with 'ant war'
+- this will produce a css-validator.war file youcan copy to the deply dir of your application server
+This is IMO much more straigth forward then the "offical" description.
 
 
 licence

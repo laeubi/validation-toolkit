@@ -20,12 +20,10 @@
 package de.laeubisoft.tools.ant.validation;
 
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.net.URLConnection;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -34,7 +32,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
 import javax.xml.bind.JAXBContext;
-import javax.xml.bind.JAXBElement;
 import javax.xml.bind.JAXBException;
 import javax.xml.bind.Unmarshaller;
 
@@ -44,24 +41,18 @@ import org.apache.commons.httpclient.HttpStatus;
 import org.apache.commons.httpclient.NameValuePair;
 import org.apache.commons.httpclient.methods.GetMethod;
 import org.apache.commons.httpclient.methods.PostMethod;
-import org.apache.commons.httpclient.methods.RequestEntity;
-import org.apache.commons.httpclient.methods.multipart.FilePart;
-import org.apache.commons.httpclient.methods.multipart.MultipartRequestEntity;
-import org.apache.commons.httpclient.methods.multipart.Part;
-import org.apache.commons.httpclient.methods.multipart.StringPart;
-import org.apache.commons.httpclient.params.HttpMethodParams;
 import org.apache.tools.ant.BuildException;
 import org.apache.tools.ant.Project;
 import org.apache.tools.ant.Task;
 import org.ccil.cowan.tagsoup.Parser;
 import org.w3.markup.validator.Culprit;
 import org.w3.markup.validator.Debug;
-import org.w3.markup.validator.Envelope;
 import org.w3.markup.validator.MarkupValidationResponse;
 import org.w3.markup.validator.ObjectFactory;
 import org.w3.markup.validator.ValidationErrors;
 import org.w3.markup.validator.ValidationWarnings;
 import org.w3.markup.validator.Warning;
+import org.w3.soap.envelope.Envelope;
 import org.xml.sax.Attributes;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
@@ -353,8 +344,8 @@ public class W3CMarkupValidationTask extends Task {
     protected boolean checkURI(final URL uriToCheck) throws BuildException {
         try {
             InputStream connection = buildConnection(uriToCheck);
-            Unmarshaller unmarshaller = JAXBContext.newInstance(ObjectFactory.class).createUnmarshaller();
-            Object object = getObject(unmarshaller.unmarshal(connection));
+            Unmarshaller unmarshaller = JAXBContext.newInstance(Envelope.class, ObjectFactory.class).createUnmarshaller();
+            Object object = Tools.getObject(unmarshaller.unmarshal(connection));
             if (W3_ORG_VALIDATOR.equals(validator)) {
                 //The W3C recommends to at least wait one second between automatic requests to their public service...
                 //So we sleep here for one second to comply with this
@@ -368,7 +359,7 @@ public class W3CMarkupValidationTask extends Task {
             if (object instanceof Envelope) {
                 Envelope envelope = (Envelope) object;
                 for (Object bodyObject : envelope.getBody().getAny()) {
-                    bodyObject = getObject(bodyObject);
+                    bodyObject = Tools.getObject(bodyObject);
                     if (bodyObject instanceof MarkupValidationResponse) {
                         MarkupValidationResponse markupvalidationresponse = (MarkupValidationResponse) bodyObject;
                         handleResponse(markupvalidationresponse);
@@ -435,7 +426,7 @@ public class W3CMarkupValidationTask extends Task {
                 postMethod.addParameters(params.toArray(new NameValuePair[0]));
             } else {
                 //Finally files must be checked with multipart-forms....
-                postMethod.setRequestEntity(createFileUpload(params, postMethod.getParams()));
+                postMethod.setRequestEntity(Tools.createFileUpload(uploaded_file, "uploaded_file", charset, params, postMethod.getParams()));
             }
             method = postMethod;
         }
@@ -446,48 +437,6 @@ public class W3CMarkupValidationTask extends Task {
             throw new BuildException("Server returned " + result + " " + method.getStatusText());
         }
 
-    }
-
-    /**
-     * Creates a {@link RequestEntity} that can be used for submitting a file
-     * 
-     * @param params
-     *            the params to use
-     * @param methodParams
-     *            the {@link HttpMethodParams} of the requesting method
-     * @return {@link RequestEntity} that can be used for submitting the given
-     *         file via Multipart
-     * @throws IOException
-     *             if something is wrong with the file...
-     */
-    private RequestEntity createFileUpload(List<NameValuePair> params, HttpMethodParams methodParams) throws IOException {
-        if (uploaded_file == null) {
-            throw new FileNotFoundException("file not present!");
-        }
-        List<Part> parts = new ArrayList<Part>();
-        for (NameValuePair nameValuePair : params) {
-            parts.add(new StringPart(nameValuePair.getName(), nameValuePair.getValue()));
-        }
-        FilePart fp = new FilePart("uploaded_file", uploaded_file);
-        fp.setContentType(URLConnection.guessContentTypeFromName(uploaded_file.getName()));
-        if (charset != null) {
-            fp.setCharSet(charset);
-        }
-        parts.add(fp);
-        return new MultipartRequestEntity(parts.toArray(new Part[0]), methodParams);
-    }
-
-    /**
-     * Extract the "real" Object from JaxB
-     * 
-     * @param object
-     * @return
-     */
-    private static Object getObject(Object object) {
-        if (object instanceof JAXBElement<?>) {
-            object = ((JAXBElement<?>) object).getValue();
-        }
-        return object;
     }
 
     /**
