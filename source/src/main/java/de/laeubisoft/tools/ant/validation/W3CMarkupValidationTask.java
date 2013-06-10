@@ -164,6 +164,7 @@ public class W3CMarkupValidationTask extends Task {
      */
     public void addConfiguredIgnore(IgnorePattern ignorePattern) {
         ignorePatternList.add(ignorePattern.toPattern());
+        log("Pattern added " + ignorePattern, Project.MSG_INFO);
     }
 
     /**
@@ -285,14 +286,16 @@ public class W3CMarkupValidationTask extends Task {
                 //If we should recurse, parse the URL and determine all links
                 if (recurse) {
                     Set<URL> recurseInto = recurseInto(url);
-                    for (URL newUrl : recurseInto) {
+                    urlloop: for (URL newUrl : recurseInto) {
                         String string = newUrl.toString();
                         if (checkedURIs.contains(string)) {
                             continue;
                         }
                         for (Pattern pattern : ignorePatternList) {
                             if (pattern.matcher(string).matches()) {
-                                continue;
+                                log("pattern " + pattern + " matches " + string + ", URL will be ignored", Project.MSG_INFO);
+                                checkedURIs.add(string);
+                                continue urlloop;
                             }
                         }
                         urlsToCheck.add(newUrl);
